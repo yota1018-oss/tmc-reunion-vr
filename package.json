@@ -1,0 +1,19 @@
+{
+  "name": "tmc-reunion-vr",
+  "version": "0.1.0",
+  "description": "第3回TMC同窓会 VR事前体験・運営リハーサル",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "vite": "^5.4.10"
+  },
+  "private": true,
+  "type": "module"
+}

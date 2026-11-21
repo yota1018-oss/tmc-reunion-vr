@@ -1,0 +1,129 @@
+:root {
+  --bg: #0f172a;
+  --panel: rgba(15, 23, 42, 0.86);
+  --line: rgba(148, 163, 184, 0.25);
+  --text: #f8fafc;
+  --muted: #94a3b8;
+  --accent: #f97316;
+  --accent-ink: #fff7ed;
+  --navy: #1e3a8a;
+  font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic", Meiryo, system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); }
+#app { position: fixed; inset: 0; touch-action: none; }
+#app canvas { display: block; }
+button, input, select { font: inherit; }
+button {
+  background: #334155; color: var(--text); border: 1px solid var(--line); border-radius: 10px;
+  padding: 8px 12px; cursor: pointer; min-height: 40px;
+}
+button:hover { background: #475569; }
+button.primary { background: var(--accent); color: #fff; border-color: transparent; font-weight: 700; }
+button.primary:hover { background: #ea580c; }
+input, select {
+  width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #cbd5e1;
+  background: #fff; color: #111827; min-height: 44px;
+}
+
+/* 入場 */
+.overlay {
+  position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; overflow-y: auto;
+  background: radial-gradient(circle at 30% 20%, #1e3a8a 0%, #0f172a 60%);
+  z-index: 10;
+}
+.card {
+  width: min(480px, 100%); background: #fff; color: #111827; border-radius: 18px; padding: 24px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4); display: grid; gap: 12px;
+}
+.card h1 { margin: 0; font-size: 1.45rem; }
+.card label { display: grid; gap: 4px; font-size: 0.86rem; color: #374151; font-weight: 600; }
+.card .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.card .check { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+.card .check input { width: auto; min-height: 0; }
+.eyebrow { margin: 0; color: var(--accent); font-weight: 700; font-size: 0.8rem; letter-spacing: 0.06em; }
+.meta { margin: 0; color: #4b5563; font-size: 0.86rem; }
+.buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.card button:not(.primary) { background: #e2e8f0; color: #111827; border-color: #cbd5e1; }
+.error { color: #dc2626; margin: 0; min-height: 1.2em; font-size: 0.86rem; }
+.note { margin: 0; color: #6b7280; font-size: 0.75rem; }
+
+/* HUD */
+.panel {
+  position: fixed; background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  padding: 12px; backdrop-filter: blur(6px); z-index: 5;
+}
+#phaseCard { top: 12px; left: 12px; width: min(360px, calc(100vw - 24px)); }
+.phase-top { display: flex; justify-content: space-between; align-items: center; }
+.clock { font-size: 1.6rem; font-weight: 800; color: #fdba74; font-variant-numeric: tabular-nums; }
+.online { font-size: 0.75rem; color: var(--muted); }
+#phaseCard h2 { margin: 2px 0 4px; font-size: 1.1rem; }
+#phaseCard p { margin: 4px 0; font-size: 0.84rem; line-height: 1.5; color: #cbd5e1; }
+#phaseCard .staff { background: rgba(234, 88, 12, 0.18); border-left: 3px solid var(--accent); padding: 6px 8px; border-radius: 6px; color: #fed7aa; }
+#phaseCard .target { color: #fdba74; font-weight: 700; }
+#phaseCard .target.arrived { color: #86efac; }
+
+#timeBar { top: 12px; right: 12px; width: min(380px, calc(100vw - 24px)); display: grid; gap: 8px; }
+.tl-buttons { display: flex; gap: 6px; }
+.tl-buttons button { flex: 1; font-size: 1rem; }
+.tl-buttons select { width: 84px; min-height: 40px; padding: 4px; }
+#timeSlider { padding: 0; min-height: 24px; accent-color: var(--accent); background: transparent; border: none; }
+.ticks { position: relative; height: 34px; font-size: 0.62rem; color: var(--muted); }
+.ticks span { position: absolute; top: 0; transform: translateX(-2px); border-left: 1px solid var(--muted); padding-left: 3px; white-space: nowrap; cursor: pointer; line-height: 1.2; }
+.ticks span.active { color: #fdba74; border-color: #fdba74; }
+.check.small { display: flex; gap: 6px; align-items: center; font-size: 0.78rem; color: #cbd5e1; }
+.check.small input { width: auto; min-height: 0; }
+
+#tools { bottom: 12px; right: 12px; display: flex; flex-wrap: wrap; gap: 6px; max-width: min(420px, calc(100vw - 24px)); justify-content: flex-end; }
+#tools button { font-size: 0.82rem; }
+.toggle.on { background: var(--accent); border-color: transparent; }
+
+#chat { bottom: 12px; left: 12px; width: min(340px, calc(100vw - 24px)); padding: 8px; }
+.chat-head { width: 100%; text-align: left; background: transparent; border: none; font-weight: 700; padding: 4px 6px; min-height: 32px; }
+#chatBadge { background: var(--accent); border-radius: 999px; padding: 0 8px; font-size: 0.75rem; margin-left: 6px; }
+#chat.collapsed #chatBody { display: none; }
+#chatLog { list-style: none; margin: 0; padding: 0 4px; max-height: 26vh; overflow-y: auto; font-size: 0.84rem; display: grid; gap: 4px; }
+#chatLog .who { font-weight: 700; margin-right: 6px; }
+#chatLog .time { color: var(--muted); font-size: 0.7rem; margin-left: 4px; }
+#chatLog .sys { color: var(--muted); font-size: 0.75rem; }
+.quick { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+.quick button { font-size: 0.74rem; padding: 4px 8px; min-height: 30px; background: var(--navy); }
+#chatForm { display: flex; gap: 6px; }
+#chatForm input { min-height: 40px; }
+
+#minimap { position: fixed; right: 12px; bottom: 76px; width: 220px; height: 220px; border-radius: 14px; border: 1px solid var(--line); background: rgba(15, 23, 42, 0.9); z-index: 5; }
+
+#help { top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(460px, calc(100vw - 32px)); z-index: 8; }
+#help h3 { margin: 0 0 8px; }
+#help ul { padding-left: 18px; margin: 0 0 12px; font-size: 0.88rem; line-height: 1.6; }
+
+#joystick {
+  position: fixed; left: 24px; bottom: 24px; width: 120px; height: 120px; border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12); border: 2px solid rgba(255, 255, 255, 0.3); display: none; z-index: 6; touch-action: none;
+}
+#stick { position: absolute; left: 35px; top: 35px; width: 50px; height: 50px; border-radius: 50%; background: rgba(249, 115, 22, 0.85); }
+
+/* VRボタン（three.js） */
+#VRButton { z-index: 6 !important; bottom: 12px !important; }
+
+@media (pointer: coarse) {
+  #joystick { display: block; }
+  #chat { bottom: 160px; }
+  #chat.collapsed { width: auto; }
+}
+@media (max-width: 720px) {
+  .panel { padding: 8px; border-radius: 12px; }
+  #phaseCard { top: 8px; left: 8px; width: calc(100vw - 16px); }
+  #phaseCard p#phaseDesc, #phaseCard .staff { display: none; }
+  .clock { font-size: 1.3rem; }
+  #timeBar { top: auto; bottom: 8px; left: 8px; right: 8px; width: auto; gap: 4px; }
+  #timeBar .ticks, #followWrap, #leadWrap { display: none !important; }
+  #tools { top: 128px; bottom: auto; right: 8px; left: auto; flex-direction: column; align-items: stretch; max-width: 110px; padding: 6px; gap: 4px; }
+  #tools button { padding: 4px 6px; min-height: 34px; font-size: 0.74rem; }
+  #chat { top: 128px; bottom: auto; left: 8px; width: auto; padding: 4px; }
+  #chat:not(.collapsed) { width: calc(100vw - 140px); z-index: 7; }
+  #chatLog { max-height: 22vh; }
+  #joystick { bottom: 120px; left: 20px; }
+  #minimap { top: auto; bottom: 120px; right: 8px; width: 150px; height: 150px; }
+}
