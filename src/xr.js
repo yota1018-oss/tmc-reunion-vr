@@ -2,11 +2,11 @@ import * as THREE from 'three';
 import { QUICK_PHRASES } from './config.js';
 import { FONT, makeCanvas, canvasTexture, roundRect, wrapText } from './textures.js';
 
-const PW = 640, PH = 860;
+const PW = 640, PH = 940;
 
 /**
  * VR用：コントローラー・移動・左手の操作パネル
- * actions: { prevPhase, nextPhase, togglePlay, toggleGuide, slidePrev, slideNext, say(text) }
+ * actions: { prevPhase, nextPhase, togglePlay, toggleGuide, warp, slidePrev, slideNext, say(text) }
  */
 export class XRControls {
   constructor(renderer, rig, camera, actions) {
@@ -68,7 +68,9 @@ export class XRControls {
     b.push({ id: 'slidePrev', label: 'スライド ◀', x: pad, y, w: bw3, h: 70 });
     b.push({ id: 'guide', label: '案内', x: pad + bw3 + gap, y, w: bw3, h: 70 });
     b.push({ id: 'slideNext', label: 'スライド ▶', x: pad + (bw3 + gap) * 2, y, w: bw3, h: 70 });
-    y += 96;
+    y += 84;
+    b.push({ id: 'warp', label: '目的地へワープ', x: pad, y, w: PW - pad * 2, h: 64 });
+    y += 88;
     QUICK_PHRASES.forEach((t, i) => {
       b.push({ id: 'say:' + i, label: t, text: t, x: pad + (i % 2) * (bw2 + gap), y: y + Math.floor(i / 2) * 78, w: bw2, h: 66 });
     });
@@ -156,6 +158,7 @@ export class XRControls {
     else if (id === 'next') a.nextPhase();
     else if (id === 'play') a.togglePlay();
     else if (id === 'guide') a.toggleGuide();
+    else if (id === 'warp') a.warp();
     else if (id === 'slidePrev') a.slidePrev();
     else if (id === 'slideNext') a.slideNext();
     else if (id.startsWith('say:')) a.say(h.btn.text);

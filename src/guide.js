@@ -1,6 +1,5 @@
 import * as THREE from 'three';
-import { ENTRANCE, zoneById } from './config.js';
-import { locate } from './venue.js';
+import { route, targetPoint, locate } from './nav.js';
 
 // 床の矢印で目的地までの経路を表示する
 export class Guide {
@@ -16,7 +15,7 @@ export class Guide {
     const geo = new THREE.ShapeGeometry(shape);
     geo.rotateX(Math.PI / 2); // 矢印の先端を -z 向きに
     this.arrowMat = new THREE.MeshBasicMaterial({ color: '#f97316', transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide });
-    this.maxArrows = 120;
+    this.maxArrows = 220;
     this.arrows = new THREE.InstancedMesh(geo, this.arrowMat, this.maxArrows);
     this.arrows.frustumCulled = false;
     this.arrows.count = 0;
@@ -46,48 +45,27 @@ export class Guide {
     this.up = new THREE.Vector3(0, 1, 0);
   }
 
-  targetPoint(id) {
-    if (id === 'entrance') return { x: ENTRANCE.x, z: ENTRANCE.z - 0.6 };
-    const i = this.zoneMeta.get(id);
-    return i ? { x: i.cx, z: i.cz } : null;
-  }
-
-  /** 経路: 部屋→出入口→廊下→目的の出入口→目的地 */
-  route(from, targetId) {
-    const here = locate(this.zoneMeta, from.x, from.z);
-    const goal = this.targetPoint(targetId);
-    if (!goal) return [];
-    const pts = [{ x: from.x, z: from.z }];
-    const doorOut = (zid) => {
-      const z = zoneById(zid);
-      const outward = Math.sign(z.door.x) || 1; // 廊下の中心はx=0
-      return [{ x: z.door.x + outward * 0.6, z: z.door.z }, { x: z.door.x - outward * 0.6, z: z.door.z }];
-    };
-    if (here === targetId) { pts.push(goal); return pts; }
-    if (here && here !== 'corridor') {
-      const [inside, outside] = doorOut(here);
-      pts.push(inside, outside);
-    }
-    if (targetId === 'entrance') {
-      pts.push({ x: 0, z: pts[pts.length - 1].z }, goal);
-    } else {
-      const [inside, outside] = doorOut(targetId);
-      pts.push(outside, inside, goal);
-    }
-    return pts;
-  }
-
   update(dt, playerPos, targetId) {
     const show = this.enabled && !!targetId;
     this.group.visible = show;
     if (!show) return;
-    const goal = this.targetPoint(targetId);
+    const goal = targetPoint(targetId);
+    if (!goal) { this.group.visible = false; return; }
     this.beacon.position.x = this.ring.position.x = goal.x;
     this.beacon.position.z = this.ring.position.z = goal.z;
     this.arrived = Math.hypot(playerPos.x - goal.x, playerPos.z - goal.z) < 2.2
-      || (targetId !== 'entrance' && locate(this.zoneMeta, playerPos.x, playerPos.z) === targetId);
+      || locate(playerPos.x, playerPos.z).zone === targetId;
 
-    const pts = this.route(playerPos, targetId);
+    // 経路の計算は少し間引く（毎フレームは不要）
+    this.routeTimer = (this.routeTimer || 0) - dt;
+    if (this.routeTimer <= 0 || this.routeTarget !== targetId) {
+      this.pts = route(playerPos, targetId);
+      this.routeTimer = 0.25;
+      this.routeTarget = targetId;
+    } else if (this.pts.length) {
+      this.pts[0] = { x: playerPos.x, z: playerPos.z };
+    }
+    const pts = this.pts;
     this.offset = (this.offset + dt * 1.2) % 0.9;
     let n = 0;
     const spacing = 0.9;

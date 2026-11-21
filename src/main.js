@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { VRButton } from 'three/examples/jsm/webxr/VRButton.js';
 import {
-  EVENT, CATEGORIES, INDUSTRIES, SPAWN, ZONES, CORRIDOR, QUICK_PHRASES, categoryById, zoneById,
+  EVENT, CATEGORIES, INDUSTRIES, SPAWN, ZONES, BUILDINGS, CAMPUS, PLACES, QUICK_PHRASES, categoryById, zoneById,
 } from './config.js';
-import { buildVenue, isWalkable, locate } from './venue.js';
+import { buildVenue } from './venue.js';
+import { isWalkable, locate, targetLabel, warpPoint } from './nav.js';
 import { Avatar } from './avatar.js';
 import { Crowd } from './crowd.js';
 import { Guide } from './guide.js';
@@ -75,9 +76,9 @@ $('app').appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color('#bae6fd');
-scene.fog = new THREE.Fog('#bae6fd', 30, 70);
+scene.fog = new THREE.Fog('#bae6fd', 80, 260);
 
-const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 120);
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.08, 400);
 const rig = new THREE.Group(); // プレイヤー（VRでは頭の位置はrig内で動く）
 rig.add(camera);
 scene.add(rig);
@@ -114,7 +115,6 @@ const resolveTarget = (phase) => {
   if (!t || typeof t === 'string') return t;
   return t[me?.category] || t.default;
 };
-const targetLabel = (id) => (id === 'entrance' ? '2号館 入口' : zoneById(id)?.label || '');
 
 function headPos() {
   const v = new THREE.Vector3();
@@ -130,8 +130,24 @@ function headYaw() {
 function tryMove(dx, dz) {
   const h = headPos();
   // 軸ごとに判定して壁沿いに滑る
-  if (isWalkable(venue.walkable, h.x + dx, h.z)) { rig.position.x += dx; h.x += dx; }
-  if (isWalkable(venue.walkable, h.x, h.z + dz)) { rig.position.z += dz; }
+  if (isWalkable(h.x + dx, h.z)) { rig.position.x += dx; h.x += dx; }
+  if (isWalkable(h.x, h.z + dz)) { rig.position.z += dz; }
+}
+
+/** 目的地へワープ（入口の内側に移動して部屋の中を向く） */
+function warpToTarget() {
+  const t = currentPhase && resolveTarget(currentPhase);
+  const w = t && warpPoint(t);
+  if (!w) return;
+  const h = headPos();
+  rig.position.x += w.x - h.x;
+  rig.position.z += w.z - h.z;
+  const want = Math.atan2(-(w.face.x - w.x), -(w.face.z - w.z));
+  rig.rotation.y += want - headYaw();
+  const h2 = headPos();
+  rig.position.x += w.x - h2.x;
+  rig.position.z += w.z - h2.z;
+  pitch = 0;
 }
 
 // ---------------- タイムライン・スクリーン ----------------
@@ -201,7 +217,7 @@ function updatePlayBtn() { $('playBtn').textContent = clock.playing ? '⏸' : '�
 /** スクリーン: いま居る部屋（廊下なら目的地）のスライドを送る */
 function activeScreenZone() {
   const h = headPos();
-  const here = locate(venue.zoneMeta, h.x, h.z);
+  const here = locate(h.x, h.z).zone;
   if (venue.screens.has(here)) return here;
   const t = currentPhase && resolveTarget(currentPhase);
   if (venue.screens.has(t)) return t;
@@ -327,6 +343,7 @@ function setupTools() {
   $('crowdBtn').addEventListener('click', () => { crowdOn = !crowdOn; crowd.setVisible(crowdOn); toggle($('crowdBtn'), crowdOn, '人影'); });
   $('slidePrevBtn').addEventListener('click', () => moveSlide(-1));
   $('slideNextBtn').addEventListener('click', () => moveSlide(1));
+  $('warpBtn').addEventListener('click', warpToTarget);
   $('mapBtn').addEventListener('click', () => { $('minimap').hidden = !$('minimap').hidden; });
   $('helpBtn').addEventListener('click', () => { $('help').hidden = false; });
   $('helpClose').addEventListener('click', () => { $('help').hidden = true; });
@@ -343,26 +360,32 @@ function drawMinimap() {
   if (cv.hidden) return;
   const ctx = cv.getContext('2d');
   const W = cv.width;
-  const all = [CORRIDOR.rect, ...ZONES.map((z) => z.rect)];
-  const minX = Math.min(...all.map((r) => r[0])) - 1, maxX = Math.max(...all.map((r) => r[2])) + 1;
-  const minZ = Math.min(...all.map((r) => r[1])) - 1, maxZ = Math.max(...all.map((r) => r[3])) + 2;
+  const [minX, minZ, maxX, maxZ] = CAMPUS.bounds;
   const s = W / Math.max(maxX - minX, maxZ - minZ);
-  const X = (x) => (x - minX) * s, Y = (z) => (z - minZ) * s;
+  const ox = (W - (maxX - minX) * s) / 2, oz = (W - (maxZ - minZ) * s) / 2;
+  const X = (x) => ox + (x - minX) * s, Y = (z) => oz + (z - minZ) * s;
+  const R = (r) => [X(r[0]), Y(r[1]), (r[2] - r[0]) * s, (r[3] - r[1]) * s];
   ctx.clearRect(0, 0, W, W);
-  ctx.fillStyle = '#334155';
-  ctx.fillRect(X(CORRIDOR.rect[0]), Y(CORRIDOR.rect[1]), (CORRIDOR.rect[2] - CORRIDOR.rect[0]) * s, (CORRIDOR.rect[3] - CORRIDOR.rect[1]) * s);
-  const target = currentPhase && resolveTarget(currentPhase);
-  ctx.font = '11px sans-serif';
-  for (const z of ZONES) {
-    const [x0, z0, x1, z1] = z.rect;
-    ctx.fillStyle = z.color;
-    ctx.globalAlpha = z.id === target ? 1 : 0.55;
-    ctx.fillRect(X(x0), Y(z0), (x1 - x0) * s, (z1 - z0) * s);
-    ctx.globalAlpha = 1;
-    if (z.id === target) { ctx.strokeStyle = '#f97316'; ctx.lineWidth = 3; ctx.strokeRect(X(x0), Y(z0), (x1 - x0) * s, (z1 - z0) * s); }
-    ctx.fillStyle = '#111827';
-    ctx.fillText(z.label.replace(/（.*）/, ''), X(x0) + 4, Y(z0) + 14, (x1 - x0) * s - 8);
+  ctx.fillStyle = '#3f4b3a';
+  ctx.fillRect(...R(CAMPUS.bounds));
+  ctx.font = '10px sans-serif';
+  for (const b of BUILDINGS) {
+    ctx.fillStyle = b.venue ? '#e2e8f0' : '#64748b';
+    ctx.fillRect(...R(b.rect));
+    if (!b.venue) { ctx.fillStyle = '#e2e8f0'; ctx.fillText(b.label, X(b.rect[0]) + 2, Y(b.rect[1]) + 11, (b.rect[2] - b.rect[0]) * s - 4); }
   }
+  const target = currentPhase && resolveTarget(currentPhase);
+  for (const z of ZONES) {
+    ctx.fillStyle = z.color;
+    ctx.globalAlpha = z.id === target ? 1 : 0.6;
+    ctx.fillRect(...R(z.rect));
+    ctx.globalAlpha = 1;
+    if (z.id === target) { ctx.strokeStyle = '#f97316'; ctx.lineWidth = 3; ctx.strokeRect(...R(z.rect)); }
+  }
+  ctx.fillStyle = '#fff';
+  ctx.fillText('2号館', X(36) + 2, Y(-52) - 2);
+  ctx.fillText('葵テラスEAST', X(-10) + 2, Y(-86) - 2);
+  ctx.fillText('正門', X(PLACES.gate.x) - 10, Y(PLACES.gate.z) - 2);
   for (const a of peers.values()) {
     ctx.fillStyle = categoryById(a.profile.category).color;
     ctx.beginPath(); ctx.arc(X(a.group.position.x), Y(a.group.position.z), 4, 0, 7); ctx.fill();
@@ -373,7 +396,9 @@ function drawMinimap() {
   ctx.translate(X(h.x), Y(h.z));
   ctx.rotate(-yaw);
   ctx.fillStyle = '#f97316';
-  ctx.beginPath(); ctx.moveTo(0, -9); ctx.lineTo(6, 6); ctx.lineTo(-6, 6); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(0, -8); ctx.lineTo(5, 5); ctx.lineTo(-5, 5); ctx.closePath(); ctx.fill(); ctx.stroke();
   ctx.restore();
 }
 
@@ -477,6 +502,7 @@ async function start(profile, pass) {
   xr = new XRControls(renderer, rig, camera, {
     prevPhase: prevPhaseAction, nextPhase: nextPhaseAction, togglePlay,
     toggleGuide: () => $('guideBtn').click(),
+    warp: warpToTarget,
     slidePrev: () => moveSlide(-1), slideNext: () => moveSlide(1),
     say: (t) => sendChat(t),
   });

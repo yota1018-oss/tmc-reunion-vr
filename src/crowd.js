@@ -1,5 +1,8 @@
 import * as THREE from 'three';
-import { CATEGORIES, EXPECTED_PEOPLE, ENTRANCE } from './config.js';
+import { CATEGORIES, EXPECTED_PEOPLE, PLACES } from './config.js';
+import { route } from './nav.js';
+
+const ENTRANCE = PLACES.gate;
 
 // 想定参加者の人影（半透明）。時間帯ごとに各部屋へ移動する
 const MIX = ['shakaijin', 'shakaijin', 'shakaijin', 'obog', 'obog', 'y1', 'y1', 'y2', 'y3', 'y4', 'y4', 'staff', 'staff', 'teacher'];
@@ -64,45 +67,50 @@ export class Crowd {
         else spot = shuffled[si++ % Math.max(shuffled.length, 1)];
         if (!spot) spot = { x: info.cx + (Math.random() - 0.5) * info.w * 0.6, z: info.cz + (Math.random() - 0.5) * info.d * 0.6, ry: Math.random() * 6 };
         const jitter = spot.seated ? 0 : 0.15;
-        this.assign(p, spot.x + (Math.random() - 0.5) * jitter, spot.z + (Math.random() - 0.5) * jitter, spot.ry ?? 0, !!spot.seated, instant);
+        this.assign(p, spot.x + (Math.random() - 0.5) * jitter, spot.z + (Math.random() - 0.5) * jitter, spot.ry ?? 0, !!spot.seated, instant, zoneId);
       }
     }
     // 残りは会場外（非表示）
     for (; idx < n; idx++) {
       const p = this.people[order[idx]];
-      this.assign(p, ENTRANCE.x + (Math.random() - 0.5) * 2, ENTRANCE.z + 4, 0, false, instant);
+      this.assign(p, ENTRANCE.x + (Math.random() - 0.5) * 4, ENTRANCE.z + 3, 0, false, instant, 'gate');
       p.leaving = true;
     }
   }
 
-  assign(p, x, z, ry, seated, instant) {
+  assign(p, x, z, ry, seated, instant, zoneId) {
+    const moved = Math.hypot(p.tx - x, p.tz - z) > 0.01;
     p.tx = x; p.tz = z; p.ry = ry; p.seated = seated; p.leaving = false;
-    // 廊下経由で移動させる中継点
-    p.via = instant ? null : { x: (Math.random() - 0.5) * 2, z: p.z };
-    p.via2 = instant ? null : { x: (Math.random() - 0.5) * 2, z };
-    p.delay = instant ? 0 : Math.random() * 1.5;
-    if (instant || !p.visible) { p.x = x; p.z = z; p.via = p.via2 = null; }
+    if (instant || !p.visible) {
+      p.x = x; p.z = z; p.path = [];
+    } else if (moved) {
+      // 建物の出入口・廊下・屋外の道を通って移動する
+      const pts = route({ x: p.x, z: p.z }, zoneId);
+      pts.shift();
+      pts.pop(); // 部屋の中心は通らず、自分の席へ
+      p.path = [...pts, { x, z }];
+    }
+    p.delay = instant ? 0 : Math.random() * 2;
     p.visible = true;
   }
 
   update(dt) {
-    const speed = 4.5;
+    const speed = 5;
     for (let i = 0; i < this.people.length; i++) {
       const p = this.people[i];
-      if (p.delay > 0) { p.delay -= dt; }
-      else {
-        const goal = p.via || p.via2 || { x: p.tx, z: p.tz };
+      if (p.delay > 0) p.delay -= dt;
+      else if (p.path?.length) {
+        const goal = p.path[0];
         const dx = goal.x - p.x, dz = goal.z - p.z;
         const d = Math.hypot(dx, dz);
-        if (d < 0.05) {
-          if (p.via) p.via = null; else if (p.via2) p.via2 = null;
-        } else {
+        if (d < 0.05) p.path.shift();
+        else {
           const step = Math.min(d, speed * dt);
           p.x += (dx / d) * step; p.z += (dz / d) * step;
           p.walkRy = Math.atan2(-dx, -dz);
         }
       }
-      const arrived = !p.via && !p.via2 && Math.hypot(p.tx - p.x, p.tz - p.z) < 0.05;
+      const arrived = !p.path?.length;
       const ry = arrived ? p.ry : (p.walkRy ?? p.ry);
       this.q.setFromAxisAngle(this.up, ry);
       const hidden = p.leaving && arrived;
