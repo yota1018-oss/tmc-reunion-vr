@@ -88,6 +88,7 @@ export class Guide {
       carry = t - len;
     }
     this.arrows.count = this.arrived ? 0 : n;
+    this.beacon.visible = !this.arrived; // 到着したら光の柱は消す（足元の輪だけ残す）
     this.arrows.instanceMatrix.needsUpdate = true;
     this.arrowMat.opacity = 0.65 + Math.sin(performance.now() / 250) * 0.25;
   }

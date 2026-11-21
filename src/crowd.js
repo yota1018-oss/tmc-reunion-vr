@@ -47,7 +47,7 @@ export class Crowd {
       if (!info) continue;
       const count = Math.min(Math.round(n * ratio), n - idx);
       // 学年別セミナー: A=1・2年, B=3・4年 を優先して入れる
-      const prefer = zoneId === 'semA' ? ['y1', 'y2'] : zoneId === 'semB' ? ['y3', 'y4'] : zoneId === 'reception' && phase.start === '12:30' ? ['staff'] : null;
+      const prefer = zoneId === 'semA' ? ['y1', 'y2'] : zoneId === 'semB' ? ['y3', 'y4'] : phase.start === '12:30' ? ['staff'] : null;
       if (prefer) {
         const rest = order.slice(idx);
         rest.sort((a, b) => (prefer.includes(this.people[b].cat) ? 1 : 0) - (prefer.includes(this.people[a].cat) ? 1 : 0));

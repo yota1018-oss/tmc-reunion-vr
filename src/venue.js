@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { BUILDINGS, ZONES, CAMPUS, PLACES, OUTDOOR_NODES, OUTDOOR_EDGES, buildingById } from './config.js';
+import { BUILDINGS, ZONES, CAMPUS, PLACES, buildingById } from './config.js';
 import { signTexture, makeCanvas, canvasTexture, drawSlide, FONT } from './textures.js';
-import { sideOf, NORMAL, OPPOSITE, buildingNav } from './nav.js';
+import { sideOf, NORMAL, OPPOSITE, buildingNav, route, locate } from './nav.js';
 
 const FLOOR_H = 3.2;  // 1階の天井の高さ
 const WALL_T = 0.15;
@@ -99,6 +99,12 @@ function rectWalls(group, rect, { mat, height = FLOOR_H, gaps = {}, skip = [], l
     if (lintel) for (const g of gs) put(g[0], g[1], height - 2.3, 2.3 + (height - 2.3) / 2);
   }
 }
+/** 出入口の一覧 → rectWalls 用の gaps */
+const gapsFor = (rect, doors) => {
+  const g = {};
+  for (const d of doors) { const [side, r] = gapFor(rect, d); (g[side] ||= []).push(r); }
+  return g;
+};
 const gapFor = (rect, door) => {
   const side = sideOf(rect, door);
   const c = side === 'n' || side === 's' ? door.x : door.z;
@@ -181,7 +187,7 @@ class Screen {
 /** 部屋の「前（スクリーン側）」を基準にした座標系。toWorld(a, b): a=左右, b=前の壁からの距離 */
 function roomFrame(zone) {
   const [x0, z0, x1, z1] = zone.rect;
-  const doorSide = sideOf(zone.rect, zone.door);
+  const doorSide = sideOf(zone.rect, zone.doors[0]);
   const front = zone.screenSide || OPPOSITE[doorSide];
   const [fx, fz] = NORMAL[front];
   const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
@@ -217,35 +223,34 @@ function furnishClassroom(group, zone, F, { reception = false } = {}) {
   spots.push({ ...F.toWorld(-F.width * 0.25, 0.8), ry: F.ry + Math.PI, staff: true });
 
   if (reception) {
-    // 受付机（出入口の近く）
-    const dn = { x: zone.door.x - NORMAL[F.doorSide][0] * 2.2, z: zone.door.z - NORMAL[F.doorSide][1] * 2.2 };
-    const along = F.doorSide === 'n' || F.doorSide === 's' ? 'x' : 'z';
-    const doorRy = yawFacing(NORMAL[F.doorSide][0], NORMAL[F.doorSide][1]);
-    for (const k of [-1, 1]) {
-      const p = { x: dn.x + (along === 'x' ? k * 1.3 : 0), z: dn.z + (along === 'z' ? k * 1.3 : 0) };
-      desks.push({ ...p, ry: doorRy });
-      const st = { x: p.x - NORMAL[F.doorSide][0] * 0.6, z: p.z - NORMAL[F.doorSide][1] * 0.6 };
-      chairs.push({ ...st, ry: doorRy });
-      spots.push({ ...st, ry: doorRy, staff: true });
-      // 名札の箱
+    // 受付机（後ろの出入口の近く。受付→そのまま着席して開会式）
+    const back = F.depth;
+    for (const k of [-1.4, 1.4]) {
+      const p = F.toWorld(k, back - 2.6);
+      desks.push({ ...p, ry: F.ry });
+      const st = F.toWorld(k, back - 3.2);
+      chairs.push({ ...st, ry: F.ry + Math.PI });
+      spots.push({ ...st, ry: F.ry + Math.PI, staff: true });
       for (let i = 0; i < 3; i++) {
-        const b = box(0.16, 0.08, 0.22, lambert(['#60a5fa', '#f87171', '#facc15'][i]));
-        b.position.set(p.x + (along === 'x' ? (i - 1) * 0.3 : 0), 0.78, p.z + (along === 'z' ? (i - 1) * 0.3 : 0));
-        group.add(b);
+        const q = F.toWorld(k + (i - 1) * 0.35, back - 2.6);
+        const bx = box(0.22, 0.08, 0.16, lambert(['#60a5fa', '#f87171', '#facc15'][i]));
+        bx.position.set(q.x, 0.78, q.z);
+        bx.rotation.y = F.ry;
+        group.add(bx);
       }
     }
-    // 待機列（受付の前）
-    for (let i = 0; i < 16; i++) {
-      const row = Math.floor(i / 4), col = (i % 4) - 1.5;
-      const off = 1.0 + row * 0.8;
-      const p = { x: dn.x + NORMAL[F.doorSide][0] * off + (along === 'x' ? col * 0.7 : 0), z: dn.z + NORMAL[F.doorSide][1] * off + (along === 'z' ? col * 0.7 : 0) };
-      spots.push({ ...p, ry: doorRy + Math.PI });
+    for (let i = 0; i < 12; i++) {
+      spots.push({ ...F.toWorld(-2.75 + (i % 6) * 1.1, back - 1.7 + Math.floor(i / 6) * 0.8), ry: F.ry });
     }
-  } else {
+    const sp = F.toWorld(0, back - 2.6);
+    addPlane(group, signTexture('受付', '名札・未成年リボン', { accent: '#ca8a04' }), 1.6, 0.5,
+      new THREE.Vector3(sp.x, 2.4, sp.z), F.ry + Math.PI);
+  }
+  {
     // 白い2人用長机＋緑の椅子の列（写真の2号館教室）
     const aisle = 1.0;
     const cols = Math.max(1, Math.floor((F.width - 1.2) / (1.2 + aisle)));
-    const rows = Math.max(1, Math.floor((F.depth - 3.4) / 1.15));
+    const rows = Math.max(1, Math.floor((F.depth - 3.4 - (reception ? 3.6 : 0)) / 1.15));
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         const a = -((cols - 1) * (1.2 + aisle)) / 2 + c * (1.2 + aisle);
@@ -262,8 +267,11 @@ function furnishClassroom(group, zone, F, { reception = false } = {}) {
   instances(group, DESK, lambert('#f8fafc'), desks.map((d) => ({ ...d })));
   instances(group, CHAIR, lambert('#3f6212'), chairs);
 
-  // 窓（出入口と反対の長い壁）とカーテン
-  const winSide = OPPOSITE[F.doorSide] === F.front ? (F.front === 'n' || F.front === 's' ? 'w' : 'n') : OPPOSITE[F.doorSide];
+  // 窓（建物の外壁に面した辺）とカーテン
+  const bRect = buildingById(zone.building).rect;
+  const onEdge = { w: zone.rect[0] === bRect[0], e: zone.rect[2] === bRect[2], n: zone.rect[1] === bRect[1], s: zone.rect[3] === bRect[3] };
+  const winSide = ['n', 's', 'e', 'w'].find((sd) => onEdge[sd] && sd !== F.front && sd !== F.doorSide);
+  if (!winSide) return { seats, spots };
   const [x0, z0, x1, z1] = zone.rect;
   const wlen = winSide === 'n' || winSide === 's' ? x1 - x0 : z1 - z0;
   const [wx, wz] = NORMAL[winSide];
@@ -381,17 +389,21 @@ export function buildVenue(scene) {
   plaza.rotation.x = -Math.PI / 2;
   plaza.position.set((bx0 + bx1) / 2, -0.08, (bz0 + bz1) / 2);
   group.add(plaza);
-  // 道（屋外の経路を少し濃く）
-  const nodes = { ...Object.fromEntries(Object.entries(OUTDOOR_NODES).map(([k, [x, z]]) => [k, { x, z }])) };
-  for (const [id, n] of buildingNav) nodes[id] = n.outside;
-  for (const [a, b] of OUTDOOR_EDGES) {
-    const p = nodes[a], q = nodes[b];
-    const len = Math.hypot(q.x - p.x, q.z - p.z);
-    const road = new THREE.Mesh(new THREE.PlaneGeometry(3, len), lambert('#bfb8ae'));
-    road.rotation.x = -Math.PI / 2;
-    road.rotation.z = -Math.atan2(q.x - p.x, -(q.z - p.z));
-    road.position.set((p.x + q.x) / 2, -0.03, (p.z + q.z) / 2);
-    group.add(road);
+  // 道（正門→2号館→葵テラスEAST の屋外部分を少し濃く）
+  const paths = [route(PLACES.gate, 'hall'), route(buildingNav.get('b2').entrances[0].outside, 'terrace')];
+  for (const pts of paths) {
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p = pts[i], q = pts[i + 1];
+      const mid = locate((p.x + q.x) / 2, (p.z + q.z) / 2);
+      if (mid.building) continue;
+      const len = Math.hypot(q.x - p.x, q.z - p.z);
+      if (len < 0.5) continue;
+      const road = new THREE.Mesh(new THREE.PlaneGeometry(3, len + 3), lambert('#bfb8ae'));
+      road.rotation.x = -Math.PI / 2;
+      road.rotation.z = -Math.atan2(q.x - p.x, -(q.z - p.z));
+      road.position.set((p.x + q.x) / 2, -0.03, (p.z + q.z) / 2);
+      group.add(road);
+    }
   }
 
   // 木（キャンパスの外周）
@@ -447,29 +459,60 @@ export function buildVenue(scene) {
       for (let x = x0 + 2; x < x1 - 1; x += 3.5) for (let z = z0 + 2; z < z1 - 1; z += 3) strips.push({ x, z, y: FLOOR_H - 0.05 });
       instances(group, new THREE.BoxGeometry(1.2, 0.05, 0.18), new THREE.MeshBasicMaterial({ color: '#ffffff' }), strips);
     }
-    const [es, eg] = gapFor(b.rect, b.entrance);
+    const egaps = gapsFor(b.rect, b.entrances);
     if (b.glass) {
       // ガラス張りの外壁（葵テラス）
       const glass = new THREE.MeshLambertMaterial({ color: '#bae6fd', transparent: true, opacity: 0.28, depthWrite: false });
-      rectWalls(group, b.rect, { mat: glass, gaps: { [es]: [eg] }, lintel: false });
+      rectWalls(group, b.rect, { mat: glass, gaps: egaps, lintel: false });
       const mullions = [];
+      const inGap = (side, t) => (egaps[side] || []).some((g) => t > g[0] && t < g[1]);
       const add = (x, z) => mullions.push({ x, z, y: FLOOR_H / 2 });
-      for (let x = x0; x <= x1; x += 1.6) { add(x, z0); add(x, z1); }
-      for (let z = z0; z <= z1; z += 1.6) { if (!(es === 'e' && z > eg[0] && z < eg[1])) add(x1, z); add(x0, z); }
+      for (let x = x0; x <= x1; x += 1.6) { if (!inGap('n', x)) add(x, z0); if (!inGap('s', x)) add(x, z1); }
+      for (let z = z0; z <= z1; z += 1.6) { if (!inGap('e', z)) add(x1, z); if (!inGap('w', z)) add(x0, z); }
       instances(group, new THREE.BoxGeometry(0.06, FLOOR_H, 0.06), lambert('#475569'), mullions);
     } else {
       const ext = new THREE.MeshLambertMaterial({ color: '#e2e8f0' });
-      rectWalls(group, b.rect, { mat: ext, gaps: { [es]: [eg] } });
+      rectWalls(group, b.rect, { mat: ext, gaps: egaps });
+      // 館内の床（廊下・ホール）
+      const fl = new THREE.Mesh(new THREE.PlaneGeometry(w, d), lambert('#d4d4d8'));
+      fl.rotation.x = -Math.PI / 2;
+      fl.position.set((x0 + x1) / 2, 0.001, (z0 + z1) / 2);
+      group.add(fl);
     }
-    // 出入口の看板
-    const n = NORMAL[es];
-    const sp = buildingNav.get(b.id).outside;
-    addPlane(group, signTexture(`${b.label} 入口`, '第3回TMC同窓会 会場', { accent: '#1e3a8a' }), 2.4, 0.75,
-      new THREE.Vector3(b.entrance.x + n[0] * 0.12, 2.75, b.entrance.z + n[1] * 0.12), yawFacing(-n[0], -n[1]));
-    // 入口マット
-    const mat = box(es === 'n' || es === 's' ? b.entrance.w : 1.4, 0.02, es === 'n' || es === 's' ? 1.4 : b.entrance.w, lambert('#475569'));
-    mat.position.set(sp.x, 0.01, sp.z);
-    group.add(mat);
+    // 出入口の看板とマット
+    b.entrances.forEach((e, i) => {
+      const es = sideOf(b.rect, e);
+      const n = NORMAL[es];
+      const sp = buildingNav.get(b.id).entrances[i].outside;
+      const title = b.entranceLabels?.[i] || `${b.label} 入口`;
+      addPlane(group, signTexture(title, i === 0 ? '第3回TMC同窓会 会場' : '', { accent: '#1e3a8a' }), i === 0 ? 2.4 : 1.8, i === 0 ? 0.75 : 0.56,
+        new THREE.Vector3(e.x + n[0] * 0.12, 2.75, e.z + n[1] * 0.12), yawFacing(-n[0], -n[1]));
+      const horiz = es === 'n' || es === 's';
+      const mat = box(horiz ? e.w : 1.4, 0.02, horiz ? 1.4 : e.w, lambert('#475569'));
+      mat.position.set(e.x + n[0] * 0.7, 0.01, e.z + n[1] * 0.7);
+      group.add(mat);
+    });
+    // 入れない区画（トイレ・階段・EV）
+    for (const sd of b.solids || []) {
+      const [sx0, sz0, sx1, sz1] = sd.rect;
+      const blk = box(sx1 - sx0, FLOOR_H, sz1 - sz0, lambert('#e7e5e4'));
+      blk.position.set((sx0 + sx1) / 2, FLOOR_H / 2, (sz0 + sz1) / 2);
+      group.add(blk);
+      const tex = signTexture(sd.label, '', { accent: '#64748b', w: 512, h: 160 });
+      for (const [side, [nx, nz]] of Object.entries(NORMAL)) {
+        const edge = side === 'n' ? sz0 : side === 's' ? sz1 : side === 'w' ? sx0 : sx1;
+        if ((side === 'n' || side === 's') ? edge === b.rect[side === 'n' ? 1 : 3] : edge === b.rect[side === 'w' ? 0 : 2]) continue;
+        const c = { x: (sx0 + sx1) / 2 + nx * ((sx1 - sx0) / 2 + 0.02), z: (sz0 + sz1) / 2 + nz * ((sz1 - sz0) / 2 + 0.02) };
+        addPlane(group, tex, 1.2, 0.375, new THREE.Vector3(c.x, 2.3, c.z), yawFacing(-nx, -nz));
+      }
+    }
+    for (const sg of b.signs || []) {
+      const [nx, nz] = NORMAL[sg.face];
+      const tex = signTexture(sg.title, sg.sub, { accent: '#1e3a8a' });
+      const pos = new THREE.Vector3(sg.at.x + nx * (sg.offset || 0), sg.y || 2.4, sg.at.z + nz * (sg.offset || 0));
+      addPlane(group, tex, 2.4, 0.75, pos, yawFacing(-nx, -nz));
+      if (sg.twoSided) addPlane(group, tex, 2.4, 0.75, pos.clone().add(new THREE.Vector3(-nx * 0.02, 0, -nz * 0.02)), yawFacing(nx, nz));
+    }
   }
 
   // 部屋
@@ -492,19 +535,23 @@ export function buildVenue(scene) {
     if (Math.abs(x1 - b.rect[2]) < 0.01) skip.push('e');
     if (Math.abs(z0 - b.rect[1]) < 0.01) skip.push('n');
     if (Math.abs(z1 - b.rect[3]) < 0.01) skip.push('s');
-    const [ds, dg] = gapFor(z.rect, z.door);
-    rectWalls(group, z.rect, { mat: wallMat, gaps: { [ds]: [dg] }, skip });
+    rectWalls(group, z.rect, { mat: wallMat, gaps: gapsFor(z.rect, z.doors), skip });
 
-    const { seats, spots } = z.kind === 'cafeteria' ? furnishCafeteria(group, z, F) : furnishClassroom(group, z, F, { reception: z.kind === 'reception' });
+    const { seats, spots } = z.kind === 'cafeteria' ? furnishCafeteria(group, z, F) : furnishClassroom(group, z, F, { reception: !!z.reception });
     info.seats = seats;
     info.spots = spots;
 
     // 出入口の外側の看板（廊下側）
-    if (z.door !== b.entrance && !(z.door.x === b.entrance.x && z.door.z === b.entrance.z)) {
+    for (const door of z.doors) {
+      if ((b.entrances || []).some((e) => e.x === door.x && e.z === door.z)) continue;
+      const ds = sideOf(z.rect, door);
       const [nx, nz] = NORMAL[ds];
       const along = ds === 'n' || ds === 's' ? { x: 1, z: 0 } : { x: 0, z: 1 };
-      addPlane(group, signTexture(z.sign[0], z.sign[1], { accent: '#ea580c' }), 1.9, 0.6,
-        new THREE.Vector3(z.door.x + nx * 0.1 + along.x * (z.door.w / 2 + 1.1), 2.35, z.door.z + nz * 0.1 + along.z * (z.door.w / 2 + 1.1)),
+      // 看板は出入口の横（部屋の内側寄り）に貼る
+      const cx = (z.rect[0] + z.rect[2]) / 2, cz = (z.rect[1] + z.rect[3]) / 2;
+      const dir = Math.sign((along.x ? cx - door.x : cz - door.z)) || 1;
+      addPlane(group, signTexture(z.sign[0], z.sign[1], { accent: '#ea580c' }), 1.6, 0.5,
+        new THREE.Vector3(door.x + nx * 0.1 + along.x * dir * (door.w / 2 + 0.95), 2.35, door.z + nz * 0.1 + along.z * dir * (door.w / 2 + 0.95)),
         yawFacing(-nx, -nz));
     }
 

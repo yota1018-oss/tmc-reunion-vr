@@ -360,7 +360,10 @@ function drawMinimap() {
   if (cv.hidden) return;
   const ctx = cv.getContext('2d');
   const W = cv.width;
-  const [minX, minZ, maxX, maxZ] = CAMPUS.bounds;
+  // 建物の中にいるときはその建物を拡大して表示
+  const hp = headPos();
+  const inB = BUILDINGS.find((b) => b.venue && hp.x >= b.rect[0] && hp.x <= b.rect[2] && hp.z >= b.rect[1] && hp.z <= b.rect[3]);
+  const [minX, minZ, maxX, maxZ] = inB ? [inB.rect[0] - 3, inB.rect[1] - 3, inB.rect[2] + 3, inB.rect[3] + 3] : CAMPUS.bounds;
   const s = W / Math.max(maxX - minX, maxZ - minZ);
   const ox = (W - (maxX - minX) * s) / 2, oz = (W - (maxZ - minZ) * s) / 2;
   const X = (x) => ox + (x - minX) * s, Y = (z) => oz + (z - minZ) * s;
@@ -383,8 +386,16 @@ function drawMinimap() {
     if (z.id === target) { ctx.strokeStyle = '#f97316'; ctx.lineWidth = 3; ctx.strokeRect(...R(z.rect)); }
   }
   ctx.fillStyle = '#fff';
-  ctx.fillText('2号館', X(36) + 2, Y(-52) - 2);
-  ctx.fillText('葵テラスEAST', X(-10) + 2, Y(-86) - 2);
+  for (const b of BUILDINGS.filter((bb) => bb.venue)) ctx.fillText(b.label, X(b.rect[0]) + 2, Y(b.rect[1]) - 3);
+  if (inB) {
+    ctx.fillStyle = '#94a3b8';
+    for (const sd of inB.solids || []) ctx.fillRect(...R(sd.rect));
+    ctx.fillStyle = '#111827';
+    ctx.font = 'bold 13px sans-serif';
+    for (const z of ZONES.filter((zz) => zz.building === inB.id)) {
+      ctx.fillText(z.label.split(/[（ ]/)[0], X(z.rect[0]) + 4, Y(z.rect[1]) + 16, (z.rect[2] - z.rect[0]) * s - 8);
+    }
+  }
   ctx.fillText('正門', X(PLACES.gate.x) - 10, Y(PLACES.gate.z) - 2);
   for (const a of peers.values()) {
     ctx.fillStyle = categoryById(a.profile.category).color;

@@ -38,22 +38,56 @@ export const INDUSTRIES = [
 ];
 
 // ------------------------------------------------------------
+// 2号館1階の館内図 → メートル座標への変換
+//   館内図（大学の施設案内 p.105）の画像上の座標(px)で部屋を書き、ここで実寸に直す。
+//   館内図の「上（エントランスホール側）」をキャンパスの西（広場・正門側）に向けて配置。
+//   1px = 0.09m（建物 約28m × 34m）
+// ------------------------------------------------------------
+const PLAN = { x0: 36, z0: -22.25, s: 0.09, px0: 67, py0: 588 };
+const r2 = (v) => Math.round(v * 100) / 100;
+/** 館内図の矩形 [左, 上, 右, 下](px) → [xmin, zmin, xmax, zmax](m) */
+const pr = (l, t, r, b) => [
+  r2(PLAN.x0 + (t - PLAN.py0) * PLAN.s), r2(PLAN.z0 - (r - PLAN.px0) * PLAN.s),
+  r2(PLAN.x0 + (b - PLAN.py0) * PLAN.s), r2(PLAN.z0 - (l - PLAN.px0) * PLAN.s),
+];
+/** 館内図の点(px) → 出入口 { x, z, w(幅m) } */
+const pp = (px, py, w) => ({ x: r2(PLAN.x0 + (py - PLAN.py0) * PLAN.s), z: r2(PLAN.z0 - (px - PLAN.px0) * PLAN.s), w });
+
+// ------------------------------------------------------------
 // キャンパス（キャンパスマップから起こした概略配置）
 //   rect: [xmin, zmin, xmax, zmax]（メートル。x=東、z=南。正門が南側）
 //   venue: true の建物は中に入れる（2号館・葵テラスEAST）
-//   entrance: 建物の出入口 { x, z, w(幅) }（建物の外周上）
-//   corridor: 建物内の廊下（ある場合）
+//   entrances: 建物の出入口 [{ x, z, w(幅) }]（建物の外周上）
+//   corridors: 建物内の歩ける通路（廊下・ホール）
+//   solids: 入れない区画（トイレ・階段・EVなど）
+//   signs: 館内の案内看板
 // ------------------------------------------------------------
 export const CAMPUS = { bounds: [-26, -146, 104, 36] };
 
 export const BUILDINGS = [
   {
-    id: 'b2', label: '2号館', rect: [36, -51, 64, -27], height: 16, venue: true,
-    entrance: { x: 36, z: -39, w: 4 }, corridor: [36, -41, 64, -37],
+    id: 'b2', label: '2号館', rect: pr(67, 588, 439, 903), height: 16, venue: true,
+    entrances: [pp(223, 588, 2.4), pp(148, 903, 1.8), pp(325, 903, 1.8)],
+    entranceLabels: ['2号館 正面入口', '2号館 出入口', '2号館 出入口'],
+    corridors: [pr(163, 588, 345, 695), pr(101, 648, 385, 695), pr(134, 660, 163, 903), pr(311, 660, 341, 903)],
+    solids: [
+      { label: '女子トイレ', rect: pr(67, 588, 121, 648) },
+      { label: '階段', rect: pr(121, 588, 163, 648) },
+      { label: 'EV', rect: pr(67, 648, 101, 695) },
+      { label: '階段・多目的トイレ', rect: pr(345, 588, 385, 648) },
+      { label: '男子トイレ', rect: pr(385, 588, 439, 665) },
+      { label: '倉庫', rect: pr(385, 665, 439, 695) },
+    ],
+    // 館内の案内看板（face: 看板の表が向く方角 n/s/e/w、twoSided で裏面にも表示）
+    signs: [
+      { title: 'エントランスホール', sub: '受付はB101（左右の廊下から入室）', at: pp(254, 630), face: 'w', twoSided: true, y: 2.6 },
+      { title: 'B101 受付・開会式', sub: '左右の廊下の入口から入室してください', at: pp(237, 695), face: 'w', y: 2.0, offset: 0.1 },
+    ],
   },
   {
     id: 'aoiEast', label: '葵テラスEAST', rect: [-10, -86, 10, -58], height: 8, venue: true, glass: true,
-    entrance: { x: 10, z: -64, w: 4 },
+    entrances: [{ x: 10, z: -64, w: 4 }],
+    entranceLabels: ['葵テラスEAST 入口'],
   },
   { id: 'aoiWest', label: '葵テラスWEST', rect: [-10, -58, 10, -38], height: 8 },
   { id: 'kosei', label: '学生厚生会館', rect: [-6, -34, 8, -18], height: 9 },
@@ -67,56 +101,61 @@ export const BUILDINGS = [
 ];
 export const buildingById = (id) => BUILDINGS.find((b) => b.id === id);
 
-// 屋外の目印・経路（建物の出入口どうしをつなぐ広場の道）
+// 屋外の目印・経由点（通れる道は自動で探します）
 export const PLACES = {
   gate: { x: 26, z: 24, label: '正門' },
 };
 export const OUTDOOR_NODES = {
   gate: [26, 20],
   plazaSouth: [30, -10],
+  plazaWest: [24, -36],
   plazaMid: [24, -52],
+  eastLane: [67, -38],
+  eastSouth: [67, -14],
 };
-// 道のつながり（b2 / aoiEast は各建物の出入口の外側）
-export const OUTDOOR_EDGES = [
-  ['gate', 'plazaSouth'], ['plazaSouth', 'b2'], ['b2', 'plazaMid'], ['plazaMid', 'aoiEast'], ['plazaSouth', 'plazaMid'],
-];
 
 export const SPAWN = { x: 26, z: 18, ry: -0.18 }; // 正門から2号館の方を向く
 
 // ------------------------------------------------------------
-// 会場の部屋（2号館の部屋割りは館内図が届くまで仮）
+// 会場の部屋
 //   building: どの建物の中か
-//   door: 部屋の出入口 { x, z, w }（部屋の外周上）
-//   screenSide: スクリーンを付ける壁 n/s/e/w（省略時は出入口の反対側）
-//   kind: reception | classroom | cafeteria
+//   doors: 部屋の出入口 [{ x, z, w }]（部屋の外周上）
+//   screenSide: スクリーンを付ける壁 n/s/e/w（省略時は最初の出入口の反対側）
+//   kind: classroom | cafeteria、reception: true で受付机を置く
 // ------------------------------------------------------------
 export const ZONES = [
   {
-    id: 'reception', building: 'b2', label: '受付（B101想定）', kind: 'reception',
-    rect: [36, -51, 45, -41], door: { x: 41, z: -41, w: 2.2 }, color: '#fde68a',
-    sign: ['受付', '名札・未成年リボンをお受け取りください'],
-  },
-  {
-    id: 'hall', building: 'b2', label: '2号館 大教室（開会式）', kind: 'classroom',
-    rect: [36, -37, 64, -27], door: { x: 44, z: -37, w: 2.4 }, screenSide: 'e', color: '#bfdbfe',
+    id: 'hall', building: 'b2', label: 'B101（受付・開会式）', kind: 'classroom', reception: true,
+    rect: pr(163, 695, 311, 903), screenSide: 'e', color: '#bfdbfe',
+    doors: [pp(163, 712, 1.4), pp(311, 712, 1.4), pp(163, 885, 1.4), pp(311, 885, 1.4)],
     screen: { width: 4.2, height: 2.4 },
-    sign: ['大教室', '開会式・全体説明'],
+    sign: ['B101', '受付・開会式'],
   },
   {
-    id: 'semA', building: 'b2', label: '2号館 教室A（1・2年向け）', kind: 'classroom',
-    rect: [45, -51, 54.5, -41], door: { x: 52.5, z: -41, w: 1.8 }, color: '#bbf7d0',
+    id: 'semA', building: 'b2', label: 'B102 教室A（1・2年向け）', kind: 'classroom',
+    rect: pr(341, 695, 439, 797), doors: [pp(341, 725, 1.2)], screenSide: 'w', color: '#bbf7d0',
     screen: { width: 3, height: 1.8 },
-    sign: ['教室A（1・2年向け）', '大学生のうちにやるべきこと／業界・企業の選び方'],
+    sign: ['B102 教室A（1・2年）', '大学生のうちにやるべきこと／業界・企業の選び方'],
   },
   {
-    id: 'semB', building: 'b2', label: '2号館 教室B（3・4年向け）', kind: 'classroom',
-    rect: [54.5, -51, 64, -41], door: { x: 62, z: -41, w: 1.8 }, color: '#fbcfe8',
+    id: 'semB', building: 'b2', label: 'B103 教室B（3・4年向け）', kind: 'classroom',
+    rect: pr(341, 797, 439, 903), doors: [pp(341, 875, 1.2)], screenSide: 'w', color: '#fbcfe8',
     screen: { width: 3, height: 1.8 },
-    sign: ['教室B（3・4年向け）', '社会人生活の実際／キャリアの考え方'],
+    sign: ['B103 教室B（3・4年）', '社会人生活の実際／キャリアの考え方'],
+  },
+  {
+    id: 'b105', building: 'b2', label: 'B105（未定・控室候補）', kind: 'classroom',
+    rect: pr(67, 695, 134, 797), doors: [pp(134, 725, 1.2)], screenSide: 'w', color: '#e5e7eb',
+    sign: ['B105', '未定（控室候補）'],
+  },
+  {
+    id: 'b104', building: 'b2', label: 'B104（未定・控室候補）', kind: 'classroom',
+    rect: pr(67, 797, 134, 903), doors: [pp(134, 875, 1.2)], screenSide: 'w', color: '#e5e7eb',
+    sign: ['B104', '未定（控室候補）'],
   },
   {
     id: 'terrace', building: 'aoiEast', label: '葵テラスEAST（懇親会）', kind: 'cafeteria',
-    rect: [-10, -86, 10, -58], door: { x: 10, z: -64, w: 4 }, screenSide: 'n', color: '#fed7aa',
+    rect: [-10, -86, 10, -58], doors: [{ x: 10, z: -64, w: 4 }], screenSide: 'n', color: '#fed7aa',
     screen: { width: 4.5, height: 2.5 },
     sign: ['葵テラスEAST', '懇親会・閉会式（未成年の卓にはアルコールを置きません）'],
   },
@@ -136,31 +175,31 @@ export const EXPECTED_PEOPLE = 60; // 想定参加人数（会場の人影の数
 
 export const SCHEDULE = [
   {
-    start: '12:30', title: '運営集合・設営', target: 'reception',
+    start: '12:30', title: '運営集合・設営', target: 'hall',
     desc: '運営は受付・会場設営。社会人の方はまだ来場前です。',
     staff: '受付4人：名札・未成年リボン・水を準備／懇親会4人：テラスの卓配置／開会式3人：スライド確認',
-    crowd: { reception: 0.08, hall: 0.06, terrace: 0.06 },
+    crowd: { hall: 0.14, terrace: 0.06 },
     slides: { hall: [{ title: 'まもなく受付開始', sub: '第3回TMC同窓会' }] },
   },
   {
-    start: '13:00', title: '受付開始', target: 'reception',
-    desc: '正門から2号館へ。受付（B101想定）で名札と未成年リボンを受け取ります。',
-    staff: '受付で参加費の受け取り／社会人の方を案内係が大教室へ誘導',
-    crowd: { reception: 0.35, hall: 0.45 },
+    start: '13:00', title: '受付開始', target: 'hall',
+    desc: '正門から2号館の正面入口へ。エントランスホールを通ってB101の受付で名札と未成年リボンを受け取ります。',
+    staff: '受付で参加費の受け取り／社会人の方を案内係が正面入口→B101へ誘導',
+    crowd: { hall: 0.8 },
     slides: { hall: [{ title: 'ようこそ', sub: '第3回TMC同窓会〜異業種交流会〜' }, { title: '本日の流れ', sub: '開会式 → セミナー → 懇親会 → 閉会式' }] },
   },
   {
     start: '13:30', title: '開会式', target: 'hall',
-    desc: '2号館の大教室で開会式。代表あいさつ・先生のあいさつ・本日の流れの説明。',
+    desc: '受付を済ませたらそのままB101で開会式。代表あいさつ・先生のあいさつ・本日の流れの説明。',
     staff: '司会・資料担当は前方へ。座席指定の案内',
-    crowd: { hall: 0.95, reception: 0.05 },
+    crowd: { hall: 1.0 },
     slides: { hall: [{ title: '開会式', sub: '代表あいさつ' }, { title: '本日のゴール', sub: 'OBOGを通じて様々な業界や職種の人と出会う' }, { title: '本日の流れ', sub: '13:30 開会式 / 14:00 セミナー / 16:15 懇親会 / 17:45 閉会式' }] },
   },
   {
     start: '14:00', title: 'セミナー 第1部（学年別）', target: { default: 'semA', y3: 'semB', y4: 'semB' },
-    desc: '1・2年は教室A、3・4年は教室Bへ。社会人の方は両教室に分かれて登壇。',
+    desc: '1・2年はB102（教室A）、3・4年はB103（教室B）へ。社会人の方は両教室に分かれて登壇。',
     staff: 'セミナー統括は各教室の進行を確認。登壇者の自己紹介スライドを投影',
-    crowd: { semA: 0.5, semB: 0.45, reception: 0.05 },
+    crowd: { semA: 0.5, semB: 0.45, hall: 0.05 },
     slides: {
       semA: [{ title: '大学生のうちにやるべきこと', sub: '1・2年向け' }, { title: '業界・企業の選び方', sub: '社会人の方の経験から' }],
       semB: [{ title: '社会人生活の実際', sub: '3・4年向け' }, { title: 'キャリアの考え方', sub: '短期と長期のバランス' }],
@@ -180,7 +219,7 @@ export const SCHEDULE = [
     start: '16:00', title: '休憩・移動', target: 'terrace',
     desc: '2号館を出て、広場を通って葵テラスEASTへ移動。懇親会から参加の方はここで受付。',
     staff: '懇親会からの参加者の受付／テラスの食べ物準備／2号館→葵テラスの屋外動線に案内係を配置',
-    crowd: { terrace: 0.6, reception: 0.15, hall: 0.25 },
+    crowd: { terrace: 0.6, hall: 0.4 },
     slides: { terrace: [{ title: 'まもなく懇親会', sub: '葵テラスEAST' }] },
   },
   {
@@ -201,7 +240,7 @@ export const SCHEDULE = [
     start: '18:00', title: '解散・二次会へ', target: 'gate',
     desc: '正門から退場。二次会参加の方は案内係について移動。',
     staff: '懇親会会場の原状復帰',
-    crowd: { terrace: 0.3, reception: 0.1 },
+    crowd: { terrace: 0.3 },
     slides: { terrace: [{ title: 'ありがとうございました', sub: '第3回TMC同窓会' }] },
   },
 ];
